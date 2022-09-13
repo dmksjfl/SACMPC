@@ -183,7 +183,7 @@ class TimeStepToGymWrapper(object):
 				except:
 					shp = 1
 				obs_shp.append(shp)
-			obs_shp = (np.sum(obs_shp),)
+			obs_shp = (int(np.sum(obs_shp)),)
 			assert modality != 'pixels'
 		act_shp = env.action_spec().shape
 		obs_dtype = np.float32 if modality != 'pixels' else np.uint8
