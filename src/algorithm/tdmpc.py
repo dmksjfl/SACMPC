@@ -67,7 +67,7 @@ class TDMPC():
 		self.alpha = cfg.alpha
 		self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
 		self.alpha_optim = torch.optim.Adam([self.log_alpha], lr=self.cfg.lr)
-		self.target_entropy = -(torch.Tensor(self.cfg.action_dim).to(self.device))
+		self.target_entropy = -(torch.Tensor([2.]).to(self.device))
 
 	def state_dict(self):
 		"""Retrieve state dict of TOLD model, including slow-moving target network."""
@@ -90,10 +90,11 @@ class TDMPC():
 		G, discount = 0, 1
 		for t in range(horizon):
 			z, reward = self.model.next(z, actions[t])
-			G += discount * reward
+			_, log_prob, _ = self.model.pi(z, self.cfg.min_std)
+			G += discount * (reward - self.alpha * log_prob)
 			discount *= self.cfg.discount
-		action, log_prob, _ = self.model.pi(z, self.cfg.min_std)
-		G += discount * (torch.min(*self.model.Q(z, action)) - self.alpha * log_prob) # adding entropy
+		action, _, _ = self.model.pi(z, self.cfg.min_std)
+		G += discount * torch.min(*self.model.Q(z, action))
 		return G
 
 	@torch.no_grad()
@@ -170,7 +171,7 @@ class TDMPC():
 			a, log_prob, mu = self.model.pi(z, self.cfg.min_std)
 			Q = torch.min(*self.model.Q(z, a)) - self.alpha * log_prob
 			pi_loss += -Q.mean() * (self.cfg.rho ** t)
-			alpha_loss += -(self.log_alpha * (log_prob + self.target_entropy).detach()).mean()
+			alpha_loss += -(self.log_alpha * (log_prob + self.target_entropy).detach()).mean() * (self.cfg.rho ** t)
 		
 		# # adding planning, keep the deviation close (KL divergence)
 		# mu, std = self.plan(obs, eval_mode=False, step=step, t0=False)
@@ -231,7 +232,7 @@ class TDMPC():
 			value_loss += rho * (h.mse(Q1, td_target) + h.mse(Q2, td_target))
 			priority_loss += rho * (h.l1(Q1, td_target) + h.l1(Q2, td_target))
 
-		if step % 100 == 0: print(torch.max(priority_loss.detach()))
+		# if step % 100 == 0: print(torch.max(priority_loss.detach()))
 
 		# Optimize model
 		total_loss = self.cfg.consistency_coef * consistency_loss.clamp(max=1e4) + \
